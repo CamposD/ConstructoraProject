@@ -1,8 +1,17 @@
 package org.cibertec.edu.pe.controller;
 
+import lombok.extern.slf4j.Slf4j;
+import net.sf.jasperreports.engine.JRException;
+import org.cibertec.edu.pe.dto.FileReportDTO;
+import org.cibertec.edu.pe.enums.TipoReporteEnum;
 import org.cibertec.edu.pe.model.Producto;
 import org.cibertec.edu.pe.services.IProductoService;
+import org.cibertec.edu.pe.services.IReportService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.annotation.Validated;
@@ -11,14 +20,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 
-import java.util.List;
-import java.util.Optional;
+import java.io.IOException;
+import java.sql.SQLException;
+import java.util.*;
 
+@Slf4j
 @Controller
 @RequestMapping
 public class ProductoController {
     @Autowired
     private IProductoService servicio;
+    @Autowired
+    private IReportService reportService;
 
     @GetMapping("/productos")
     public String Listar(Model modelo) {
@@ -66,5 +79,29 @@ public class ProductoController {
     public String eliminar(@PathVariable int id, Model modelo) {
         servicio.Suprimir(id);
         return "redirect:/productos";
+    }
+
+    @GetMapping("/export/{type}")
+    public ResponseEntity<Object> export(@PathVariable("type") String type) {
+        try {
+            Map<String, Object> params = new HashMap<>();
+            type = type.toLowerCase();
+            TipoReporteEnum tipo = type.equals(TipoReporteEnum.PDF.tipo) ? TipoReporteEnum.PDF : TipoReporteEnum.XLSX;
+            FileReportDTO dto = reportService.getReportFile("productos", params, tipo);
+            InputStreamResource streamResource = new InputStreamResource(dto.getStream());
+            MediaType mediaType = type.equalsIgnoreCase(TipoReporteEnum.PDF.tipo) ?
+                    MediaType.APPLICATION_PDF : MediaType.parseMediaType("application/vnd.ms-excel");
+            return ResponseEntity.ok()
+                    .header("Content-Disposition",
+                            String.format("inline; filename=\"%s", dto.getFileName())
+                                    + "\"")
+                    .contentLength(dto.getLength())
+                    .contentType(mediaType)
+                    .body(streamResource);
+
+        } catch (JRException | SQLException | IOException e) {
+            log.error("Error report: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }
